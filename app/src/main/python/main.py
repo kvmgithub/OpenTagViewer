@@ -1,8 +1,10 @@
 from enum import Enum
 import json
+import os
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
+from pathlib import Path
 import base64
 import NSKeyedUnArchiver
 
@@ -23,6 +25,13 @@ class TwoFactorMethods(Enum):
     UNKNOWN = 0
     TRUSTED_DEVICE = 1
     PHONE = 2
+
+
+# Per-accessory rolling-key alignment state (findmy >= 0.8), one JSON file per
+# beacon. Persisting this between fetches is what keeps key rotation tracking
+# working after the app restarts. On Android, chaquopy points HOME at the
+# app-private files directory.
+STATE_DIR = Path(os.environ.get("HOME", ".")) / "accessory_state"
 
 
 def _toUnixEpochMs(dt: datetime) -> int:
@@ -175,17 +184,23 @@ def loginSync(email: str, password: str, anisetteServerUrl: str) -> dict:
 
 
 def exportToString(account: AppleAccount) -> str:
-    return json.dumps(account.export())
+    return json.dumps(account.to_json())
 
 
 def getAccount(
         serializedAccountData: str, anisetteServerUrl: str) -> AppleAccount:
     try:
         data = json.loads(serializedAccountData)
+        if data.get("type") != "account":
+            # pre-findmy-0.8 state from an older app version: not restorable,
+            # force a clean re-login instead of limping along half-restored
+            print("Stored account state has an unsupported (legacy) format")
+            return None
 
+        # like AppleAccount.from_json, but with the anisette server currently
+        # configured in the app settings instead of the one in the saved state
         anisette = RemoteAnisetteProvider(anisetteServerUrl)
-        acc = AppleAccount(anisette)
-        acc.restore(data)
+        acc = AppleAccount(anisette, state_info=data)
 
         print(f"Login State: {acc.login_state}")
 
@@ -194,6 +209,63 @@ def getAccount(
         err = traceback.format_exc()
         print(f"Failed to restore account from string: {err}")
         return None
+
+
+def _loadAccessory(beaconId: str, plistContent: str) -> FindMyAccessory:
+    state_file = STATE_DIR / f"{beaconId}.json"
+    if state_file.exists():
+        try:
+            return FindMyAccessory.from_json(state_file)
+        except Exception:
+            print(f"Discarding unreadable accessory state for {beaconId}: {traceback.format_exc()}")
+    return FindMyAccessory.from_plist(BytesIO(plistContent.encode('utf-8')))
+
+
+def _saveAccessory(beaconId: str, accessory: FindMyAccessory) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    accessory.to_json(STATE_DIR / f"{beaconId}.json")
+
+
+def _reportToDict(report) -> dict:
+    ts = _toUnixEpochMs(report.timestamp)
+    return {
+        # published_at/description were removed from findmy's LocationReport
+        # in 0.8+; the Java side still expects the keys
+        "publishedAt": ts,
+        "description": "",
+        "timestamp": ts,
+        "confidence": report.confidence,
+        "latitude": report.latitude,
+        "longitude": report.longitude,
+        "horizontalAccuracy": report.horizontal_accuracy,
+        "status": report.status
+    }
+
+
+def _fetchReports(
+        account: AppleAccount,
+        beaconId: str,
+        plistContent: str,
+        start: datetime,
+        end: datetime) -> list:
+    accessory = _loadAccessory(beaconId, plistContent)
+
+    # findmy scans backwards from the accessory's current key alignment and
+    # re-aligns it from the reports it finds (see FindMy.py issue #90)
+    reports = account.fetch_location_history(accessory)
+    print(f"Got {len(reports)} raw reports for {beaconId}")
+
+    # persist the updated alignment so the next fetch resumes from it
+    # instead of re-deriving keys from the pairing date (issue #30)
+    _saveAccessory(beaconId, accessory)
+
+    items = [
+        _reportToDict(r)
+        for r in sorted(reports, key=lambda r: r.timestamp)
+        if start <= r.timestamp <= end
+    ]
+    print(f"  -> {len(items)} reports after filtering to requested time range")
+    return items
 
 
 def getLastReports(
@@ -206,7 +278,10 @@ def getLastReports(
         res = {}
 
         num_items = idToPList.size()
-        print(f"num_items is {num_items}")
+        print(f"getLastReports: num_items={num_items}, hoursBack={hoursBack}")
+
+        end = datetime.now(tz=timezone.utc)
+        start = end - timedelta(hours=hoursBack)
 
         for i in range(0, num_items):
             pair = idToPList.get(i)
@@ -214,26 +289,7 @@ def getLastReports(
             plistContent = pair.second
 
             print(f"Fetching report for {beaconId} for the last {hoursBack} hours...")
-            fp = BytesIO(plistContent.encode('utf-8'))
-            airtag = FindMyAccessory.from_plist(fp)
-
-            reports = account.fetch_last_reports(airtag, hoursBack)
-            print(f"Got {len(reports)} reports for {beaconId}")
-
-            items = []
-            for report in sorted(reports):
-                items.append({
-                    "publishedAt": _toUnixEpochMs(report.published_at),
-                    "description": report.description,
-                    "timestamp": _toUnixEpochMs(report.timestamp),
-                    "confidence": report.confidence,
-                    "latitude": report.latitude,
-                    "longitude": report.longitude,
-                    "horizontalAccuracy": report.horizontal_accuracy,
-                    "status": report.status
-                })
-
-            res[beaconId] = items
+            res[beaconId] = _fetchReports(account, beaconId, plistContent, start, end)
 
         return res
 
@@ -254,7 +310,10 @@ def getReports(
         res = {}
 
         num_items = idToPList.size()
-        print(f"num_items is {num_items}")
+        print(f"getReports: num_items={num_items}, range={unixStartMs}-{unixEndMs}")
+
+        start = datetime.fromtimestamp(unixStartMs / 1000, tz=timezone.utc)
+        end = datetime.fromtimestamp(unixEndMs / 1000, tz=timezone.utc)
 
         for i in range(0, num_items):
             pair = idToPList.get(i)
@@ -262,34 +321,7 @@ def getReports(
             plistContent = pair.second
 
             print(f"Fetching report for {beaconId} in time range {unixStartMs}-{unixEndMs}...")
-            fp = BytesIO(plistContent.encode('utf-8'))
-            airtag = FindMyAccessory.from_plist(fp)
-
-            start: datetime = datetime.fromtimestamp(
-                unixStartMs/1000,
-                tz=timezone.utc
-            )
-            end: datetime = datetime.fromtimestamp(
-                unixEndMs/1000,
-                tz=timezone.utc
-            )
-            reports = account.fetch_reports(airtag, start, end)
-            print(f"Got {len(reports)} reports for {beaconId} for time range {unixStartMs}-{unixEndMs}")
-
-            items = []
-            for report in sorted(reports):
-                items.append({
-                    "publishedAt": _toUnixEpochMs(report.published_at),
-                    "description": report.description,
-                    "timestamp": _toUnixEpochMs(report.timestamp),
-                    "confidence": report.confidence,
-                    "latitude": report.latitude,
-                    "longitude": report.longitude,
-                    "horizontalAccuracy": report.horizontal_accuracy,
-                    "status": report.status
-                })
-
-            res[beaconId] = items
+            res[beaconId] = _fetchReports(account, beaconId, plistContent, start, end)
 
         return res
 

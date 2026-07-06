@@ -82,7 +82,7 @@ chaquopy {
         version = "3.12"
         pip {
             // SEE: https://chaquo.com/chaquopy/doc/current/android.html#android-requirements
-            install("FindMy==0.7.6")
+            install("FindMy==0.10.0")
             install("NSKeyedUnArchiver==1.5")
         }
     }
