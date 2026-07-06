@@ -207,8 +207,8 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
                 if (result.getResultCode() == RESULT_OK) {
                     Intent data = result.getData();
                     if (data != null && (
-                            data.getStringExtra("deviceWasRemoved") != null)
-                            || data.getStringExtra("deviceWasChanged") != null) {
+                            data.getStringExtra("deviceWasRemoved") != null
+                            || data.getStringExtra("deviceWasChanged") != null)) {
                         this.handleDeviceListChanged();
                     }
                 }
