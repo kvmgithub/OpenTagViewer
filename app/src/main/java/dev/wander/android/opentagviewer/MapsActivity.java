@@ -18,6 +18,7 @@ import androidx.core.content.ContextCompat;
 import androidx.core.view.WindowCompat;
 
 
+import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
@@ -481,12 +482,15 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
         final BeaconLocationReport lastLocation = locations.get(locations.size() - 1);
         Uri uri = Uri.parse(String.format(Locale.ROOT, "geo:%.7f,%.7f?q=%.7f,%.7f", lastLocation.getLatitude(), lastLocation.getLongitude(), lastLocation.getLatitude(), lastLocation.getLongitude()));
+        // Let the user pick any installed maps/navigation app (no hardcoded
+        // Google Maps: not present on all devices). Navigation apps route
+        // from the current position by default.
         Intent mapIntent = new Intent(Intent.ACTION_VIEW, uri);
-        mapIntent.setPackage("com.google.android.apps.maps");
-        if (mapIntent.resolveActivity(getPackageManager()) != null) {
-            startActivity(mapIntent);
-        } else {
-            Log.e(TAG, "Could not start maps activity for currently visible tag!");
+        try {
+            startActivity(Intent.createChooser(mapIntent, null));
+        } catch (ActivityNotFoundException e) {
+            Log.e(TAG, "No app available to handle geo intent for currently visible tag!", e);
+            Toast.makeText(this, R.string.no_maps_app_found, LENGTH_SHORT).show();
         }
     }
 

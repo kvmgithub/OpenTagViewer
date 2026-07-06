@@ -21,3 +21,6 @@ app/release
 .coverage
 .pytest_cache
 .venv
+# built/downloaded artifacts
+*.apk
+output-metadata.json

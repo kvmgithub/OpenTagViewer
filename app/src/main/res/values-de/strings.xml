@@ -92,4 +92,5 @@
     <string name="failed_to_request_code_please_try_again">Codeanforderung fehlgeschlagen. Bitte versuchen Sie es erneut.</string>
     <string name="lang_ko">Koreanisch (한국어)</string>
     <string name="lang_ja">Japanisch (日本語)</string>
+    <string name="no_maps_app_found">Keine Karten-App gefunden, um diesen Ort zu öffnen</string>
 </resources>
