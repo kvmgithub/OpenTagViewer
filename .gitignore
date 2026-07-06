@@ -21,6 +21,6 @@ app/release
 .coverage
 .pytest_cache
 .venv
-# built/downloaded artifacts
+# built/downloaded APKs (apk/ stays local, never pushed)
+/apk/
 *.apk
-output-metadata.json
