@@ -82,6 +82,10 @@ chaquopy {
         version = "3.12"
         pip {
             // SEE: https://chaquo.com/chaquopy/doc/current/android.html#android-requirements
+            // Stub wheel satisfies anisette's `unicorn` dependency: the real unicorn
+            // (CPU emulator) has no Android wheel and cannot be cross-compiled by
+            // Chaquopy. Only RemoteAnisetteProvider is used, so it is never called.
+            install("libs/unicorn-2.1.1-py3-none-any.whl")
             install("FindMy==0.10.0")
             install("NSKeyedUnArchiver==1.5")
         }
