@@ -6,6 +6,10 @@ on:
       - build/os-findmy-e-20261110
   workflow_dispatch:
 
+env:
+  ANDROID_HOME: /usr/local/lib/android/sdk
+  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
 permissions:
   contents: read
 
@@ -25,8 +29,9 @@ jobs:
           java-version: '21'
       - name: Install Android SDK and NDK
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-37" "build-tools;37.0.0" "ndk;27.2.12479018"
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -1)"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" "platforms;android-37" "build-tools;37.0.0" "ndk;27.2.12479018"
       - name: Install Rust cross-compile requirements
         run: |
           sudo apt-get update -q
