@@ -48,7 +48,7 @@ jobs:
         run: |
           mkdir -p app/prebuilt/jniLibs/arm64-v8a app/prebuilt/java/com/sacca/openfinder/adi
           cp native/android/jniLibs/arm64-v8a/*.so app/prebuilt/jniLibs/arm64-v8a/
-          cp native/android/com/sacca/openfinder/adi/CoreAdi.java app/prebuilt/java/com/sacca/openfinder/adi/
+          cp native/android/com/sacca/openfinder/adi/*.java app/prebuilt/java/com/sacca/openfinder/adi/
       - name: Use available Android 36 SDK for CI build
         working-directory: source
         run: |
