@@ -31,7 +31,7 @@ jobs:
         run: |
           SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -1)"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" "platforms;android-37" "build-tools;37.0.0" "ndk;27.2.12479018"
+          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018"
       - name: Install Rust cross-compile requirements
         run: |
           sudo apt-get update -q
@@ -49,6 +49,10 @@ jobs:
           mkdir -p app/prebuilt/jniLibs/arm64-v8a app/prebuilt/java/com/sacca/openfinder/adi
           cp native/android/jniLibs/arm64-v8a/*.so app/prebuilt/jniLibs/arm64-v8a/
           cp native/android/com/sacca/openfinder/adi/CoreAdi.java app/prebuilt/java/com/sacca/openfinder/adi/
+      - name: Use available Android 36 SDK for CI build
+        working-directory: source
+        run: |
+          sed -i -e 's/compileSdk = 37/compileSdk = 36/' -e 's/targetSdk = 37/targetSdk = 36/' app/android/app/build.gradle.kts
       - name: Build signed debug APK (without Apple CoreADI)
         working-directory: source/app/android
         run: |
