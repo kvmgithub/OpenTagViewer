@@ -1,0 +1,62 @@
+name: Build os-findmy-e Android APK
+
+on:
+  push:
+    branches:
+      - build/os-findmy-e-20261110
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Clone pinned upstream repository
+        run: |
+          git clone https://github.com/sacca97/os-findmy-e.git source
+          cd source
+          git checkout d4d2a832baf47d1cf43d989879950ac2aec45f47
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK and NDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-37" "build-tools;37.0.0" "ndk;27.2.12479018"
+      - name: Install Rust cross-compile requirements
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y cmake ninja-build clang libclang-dev pkg-config protobuf-compiler
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-linux-android
+      - name: Compile native libraries for arm64
+        working-directory: source
+        run: |
+          NDK="$ANDROID_HOME/ndk/27.2.12479018" ./native/android/build.sh arm64-v8a
+      - name: Prepare non-Apple prebuilt dependencies
+        working-directory: source
+        run: |
+          mkdir -p app/prebuilt/jniLibs/arm64-v8a app/prebuilt/java/com/sacca/openfinder/adi
+          cp native/android/jniLibs/arm64-v8a/*.so app/prebuilt/jniLibs/arm64-v8a/
+          cp native/android/com/sacca/openfinder/adi/CoreAdi.java app/prebuilt/java/com/sacca/openfinder/adi/
+      - name: Build signed debug APK (without Apple CoreADI)
+        working-directory: source/app/android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+      - name: Verify output
+        run: |
+          ls -lh source/app/android/app/build/outputs/apk/debug/app-debug.apk
+          sha256sum source/app/android/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openfinder-debug-arm64
+          path: source/app/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
